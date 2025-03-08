@@ -84,9 +84,6 @@ for key in drivers:
 print("Passengers after filter:")
 for key in passengers:
     print(key)
-print("Bus riders")
-for person in bus_riders:
-    print(person)
 
 # Reverse mapping to find passenger name from ID
 passenger_id_to_name = {info[2]: name for name, info in passengers.items()}
@@ -217,3 +214,8 @@ for i in range(num_drivers):
         else:
             print(passenger_id_to_name[cars[i][j]])
     print()
+
+# Print bus riders
+print("Bus riders")
+for person in bus_riders:
+    print(person)
