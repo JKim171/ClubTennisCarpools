@@ -17,16 +17,16 @@ client = gspread.authorize(creds)
 
 # Open the Google Sheet
 spreadsheet = client.open("Club Tennis Carpools")  # Use the name of the sheet
-practiceWorksheet = spreadsheet.worksheet("Form Responses 3")
-playerWorksheet = spreadsheet.worksheet("PLAYER INFO")
+practice_worksheet = spreadsheet.worksheet("Form Responses 3")
+player_worksheet = spreadsheet.worksheet("PLAYER INFO")
 
 # Read data for lookup table
-data = playerWorksheet.get('A:I')
+data = player_worksheet.get('A:I')
 lookupdf = pd.DataFrame(data[1:], columns=data[0])
 lookupdf = lookupdf.apply(lambda x: x.str.upper() if x.dtype == "object" else x)
 
 # Read all data into a list
-data = practiceWorksheet.get('A:C')
+data = practice_worksheet.get('A:C')
 
 # Convert to Pandas DataFrame
 practicedf = pd.DataFrame(data[1:], columns=data[0])
@@ -38,41 +38,58 @@ drivers = {}
 passengers = {}
 
 # Loop through form results and sort into drivers and passengers
-driveridx = 0
-passengeridx = 0
+driver_idx = 0
+passenger_idx = 0
 for index, row in practicedf.iterrows():
-    tempRow = lookupdf.loc[row['Name'] == lookupdf['Name']]
-    if tempRow.empty:
+    temp_row = lookupdf.loc[row['Name'] == lookupdf['Name']]
+    if temp_row.empty:
         print(str(row['Name']) + " was not found in the lookup table")
     if row['IsGoing'] == "NO (I HAVE A CAR AND CAN DRIVE OTHERS)":
-        drivers[row['Name']] = [list(tempRow['Address'])[0], list(tempRow['Phone Number'])[0], 4, driveridx, []]
-        driveridx += 1
+        drivers[row['Name']] = [list(temp_row['Address'])[0], list(temp_row['Phone Number'])[0], 4, driver_idx, []]
+        driver_idx += 1
     elif row['IsGoing'] == "YES":
-        passengers[row['Name']] = [list(tempRow['Address'])[0], list(tempRow['Phone Number'])[0], passengeridx, int(list(tempRow['Num Months in Club'])[0])]
-        passengeridx += 1
+        passengers[row['Name']] = [list(temp_row['Address'])[0], list(temp_row['Phone Number'])[0], passenger_idx, int(list(temp_row['Num Months in Club'])[0])]
+        passenger_idx += 1
     # If we added participation tracking add some code here
+
+# Reverse mapping to find driver name from ID
+driver_id_to_name = {info[3]: name for name, info in drivers.items()}
+
 sorted_passengers = dict(sorted(passengers.items(), key=lambda item: item[1][3], reverse=True))
 
 num_drivers = len(drivers)
-num_riders = num_drivers * 4
+num_riders = min(len(sorted_passengers), num_drivers * 4)
 
-# Remove riders that can't fit
-kept_passengers = sorted_passengers[:num_riders]
-removed_passengers = sorted_passengers[num_riders:]
+count = 0
+kept_passengers = {}
+bus_riders = []
+for key in sorted_passengers:
+    if count < num_riders:
+        kept_passengers[key] = sorted_passengers[key]
+    else:
+        bus_riders.append(key)
+    count += 1
 
 passengers = dict(kept_passengers)
-bus_riders = []
 
-# Makes array of people riding the bus
-for tuple in removed_passengers:
-    bus_riders.append(tuple[0])
-# Fix the indexes for the passengers
-passengeridx = 0
+# Fix the indices for the passengers
+passenger_idx = 0
 for key, value in passengers.items():
-    passengers[key][2] = passengeridx
-    passengeridx += 1
-print("Drivers:", drivers)
-print("Passengers:", passengers)
+    passengers[key][2] = passenger_idx
+    passenger_idx += 1
+
+print("Drivers:")
+for key in drivers:
+    print(key)
+print("Passengers after filter:")
+for key in passengers:
+    print(key)
+print("Bus riders")
+for person in bus_riders:
+    print(person)
+
+# Reverse mapping to find passenger name from ID
+passenger_id_to_name = {info[2]: name for name, info in passengers.items()}
 
 # Create 2D adjacency matrix passengers as rows and cols
 riders_matrix = [[0 for i in range(len(passengers))] for j in range(len(passengers))]
@@ -100,8 +117,6 @@ for i in range(num_riders):
 
 # Sort matrix by row with lowest distance
 riders_matrix.sort()
-        
-print("adjMatrix:", riders_matrix)
 
 group_assigned = {} # key: passenger index, val: group index
 people_in_group = {} # key: group index, val: num people in group (4 means full)
@@ -109,7 +124,7 @@ num_groups_assigned = 0
 
 for i in range(num_riders):
     # ignore when first rider has been assigned a group
-    pass_index_1 = riders_matrix[-1]
+    pass_index_1 = riders_matrix[i][-1]
     if pass_index_1 in group_assigned:
         continue
     curr_index = -1
@@ -159,12 +174,12 @@ for i in range(num_drivers):
 drivers_matrix.sort()
 
 assigned_driver = set() # keeps track of whos in a car
-cars = [] # keeps track of final car assignments
+cars = [0 for i in range(num_drivers)] # keeps track of final car assignments
 
 # Assign drivers to groups
 for row in range(num_drivers):
-    driver_index = drivers_matrix[-1]
-    cars.append([driver_index])
+    driver_index = drivers_matrix[row][-1]
+    cars[row] = [driver_index]
     for col in range(num_riders):
         rider_index = drivers_matrix[row][col][1]
         if rider_index not in assigned_driver:
@@ -174,41 +189,31 @@ for row in range(num_drivers):
         cars[row].append(person)
         assigned_driver.add(person)
 
+print(cars)
+
+print("Riders Matrix")
+for row in riders_matrix:
+    print()
+    print(passenger_id_to_name[row[-1]])
+    for j in range(num_riders):
+        print(passenger_id_to_name[row[j][1]], row[j][0])
+    print()
+
+print("Drivers Matrix")
+for row in drivers_matrix:
+    print()
+    print(driver_id_to_name[row[-1]])
+    for j in range(num_riders):
+        print(passenger_id_to_name[row[j][1]], row[j][0])
+    print()
+    
 # Print out each car
 for i in range(num_drivers):
     print("Car", i + 1)
     for j in range(len(cars[i])):
         # Print the actual name of each person in each car
-        print()
-
-# # Calculate and draft closest drivers to passengers
-# for passenger in range(len(passengers)):
-#     curIndex = None
-#     curShortest = float('inf')
-#     tempDriver = None
-
-#     # Find the nearest available driver with less than 4 passengers
-#     for driver in range(len(drivers)):
-#         if riders_matrix[passenger][driver] < curShortest:
-#             for key, arr in drivers.items():
-#                 if driver == arr[3] and len(arr[4]) < 4:  # Check if driver has room
-#                     curShortest = riders_matrix[passenger][driver]
-#                     curIndex = driver
-#                     tempDriver = key
-
-#     # Find the corresponding passenger key
-#     tempPassenger = None
-#     for key, arr in passengers.items():
-#         if passenger == arr[2]:
-#             tempPassenger = key
-#             break  # Stop searching once found
-
-#     # If a valid driver and passenger are found, assign them
-#     if not tempDriver:
-#         print("DRIVERS ARE FULL")
-#         break
-#     if tempDriver and tempPassenger:
-#         drivers[tempDriver][4].append(tempPassenger)
-
-for key, value in drivers.items():
-    print(key + str(value[4]))
+        if j == 0:
+            print("Driver:", driver_id_to_name[cars[i][j]])
+        else:
+            print(passenger_id_to_name[cars[i][j]])
+    print()
